@@ -7,7 +7,7 @@ pub mod duckdb_helper;
 pub mod mcp;
 mod ssh_tunnel;
 
-use commands::ai::{detect_ai_harnesses, generate_sql, get_ai_status};
+use commands::ai::{detect_ai_harnesses, generate_query, get_ai_status};
 use commands::connections::{
     create_connection, delete_connection, export_connection, get_connection_by_uuid,
     get_connections, import_connections, update_connection,
@@ -20,6 +20,12 @@ use commands::database::{
     unified_test_connection, update_table_row, update_table_row_with_raw_sql,
 };
 use commands::mcp::{mcp_get_status, mcp_regenerate_token, mcp_set_enabled};
+use commands::mongodb::{
+    mongo_aggregate, mongo_create_collection, mongo_create_index, mongo_delete_one,
+    mongo_drop_collection, mongo_drop_index, mongo_find, mongo_get_validator, mongo_insert_one,
+    mongo_list_catalog, mongo_list_indexes, mongo_replace_one, mongo_set_validator,
+    mongo_test_connection,
+};
 use commands::pool::{
     pool_connect, pool_create_table, pool_delete_table_row, pool_disconnect, pool_execute_query,
     pool_get_function_definition, pool_get_schema_overview, pool_get_status, pool_get_table_data,
@@ -53,6 +59,10 @@ use tauri::{Emitter, Manager, WebviewUrl};
 const NEW_WINDOW_MENU_ID: &str = "new_window";
 const CLOSE_TAB_MENU_ID: &str = "close_tab";
 const CLOSE_WINDOW_MENU_ID: &str = "close_window";
+
+fn should_stop_created_databases(event: &tauri::RunEvent) -> bool {
+    matches!(event, tauri::RunEvent::Exit)
+}
 
 fn create_new_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<()> {
     let label = format!("window-{}", uuid::Uuid::new_v4());
@@ -97,7 +107,7 @@ pub fn run() {
                 website: Some("https://dbcooper.amal.sh".into()),
                 website_label: Some("Visit Website".into()),
                 credits: Some(
-                    "A modern database client for PostgreSQL, MySQL, MariaDB, SQLite, DuckDB, Redis, ClickHouse, and Cloudflare D1."
+                    "A modern database client for PostgreSQL, MySQL, MariaDB, SQLite, DuckDB, Redis, ClickHouse, MongoDB, and Cloudflare D1."
                         .into(),
                 ),
                 ..Default::default()
@@ -289,7 +299,7 @@ pub fn run() {
             get_all_settings,
             #[cfg(desktop)]
             check_for_update,
-            generate_sql,
+            generate_query,
             detect_ai_harnesses,
             get_ai_status,
             pool_connect,
@@ -310,6 +320,20 @@ pub fn run() {
             mcp_get_status,
             mcp_set_enabled,
             mcp_regenerate_token,
+            mongo_list_catalog,
+            mongo_test_connection,
+            mongo_find,
+            mongo_aggregate,
+            mongo_insert_one,
+            mongo_replace_one,
+            mongo_delete_one,
+            mongo_create_collection,
+            mongo_drop_collection,
+            mongo_list_indexes,
+            mongo_create_index,
+            mongo_drop_index,
+            mongo_get_validator,
+            mongo_set_validator,
             docker_list_containers,
             docker_prepare_connection,
             docker_create_database,
@@ -322,9 +346,23 @@ pub fn run() {
         .expect("error while building tauri application");
 
     app.run(|app_handle, event| {
-        if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
+        if should_stop_created_databases(&event) {
             let pool = app_handle.state::<sqlx::SqlitePool>().inner().clone();
-            tauri::async_runtime::block_on(docker::stop_created_databases(&pool));
+            if let Err(error) =
+                tauri::async_runtime::block_on(docker::stop_created_databases(&pool))
+            {
+                eprintln!("Failed to stop DBcooper-managed databases: {error}");
+            }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_stop_created_databases;
+
+    #[test]
+    fn stops_managed_databases_when_event_loop_exits() {
+        assert!(should_stop_created_databases(&tauri::RunEvent::Exit));
+    }
 }
