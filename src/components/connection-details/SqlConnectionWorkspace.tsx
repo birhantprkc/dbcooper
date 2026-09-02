@@ -9,6 +9,7 @@ import {
 import { ClockCounterClockwise, Code, Table } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { CommandPalette } from "@/components/CommandPalette";
+import { WorkspaceLogsNavigation } from "@/components/logs/WorkspaceLogsNavigation";
 import { TabBar } from "@/components/TabBar";
 import {
 	AlertDialog,
@@ -396,16 +397,26 @@ export function SqlConnectionWorkspace({
 					onStatusChange={lifecycle.commands.recordConnectionStatus}
 					onOpenSettings={openSettings}
 				/>
-				<TabBar
-					tabs={tabs}
-					activeTabId={activeTabId}
-					onTabSelect={tabActions.handleTabSelect}
-					onTabClose={tabActions.handleCloseTab}
-					onNewQuery={tabActions.handleNewQuery}
-				/>
-				<div className="min-w-0 flex-1 overflow-auto p-3">
-					{renderActiveTab()}
-				</div>
+				<WorkspaceLogsNavigation
+					connection={connection}
+					workspaceLabel="Workspace"
+					workspaceCloseTarget={{
+						kind: "tabs",
+						activeTabId,
+						closeTab: tabActions.handleCloseTab,
+					}}
+				>
+					<TabBar
+						tabs={tabs}
+						activeTabId={activeTabId}
+						onTabSelect={tabActions.handleTabSelect}
+						onTabClose={tabActions.handleCloseTab}
+						onNewQuery={tabActions.handleNewQuery}
+					/>
+					<div className="min-w-0 flex-1 overflow-auto p-3">
+						{renderActiveTab()}
+					</div>
+				</WorkspaceLogsNavigation>
 			</SidebarInset>
 
 			<AlertDialog

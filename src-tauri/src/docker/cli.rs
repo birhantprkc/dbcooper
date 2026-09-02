@@ -5,11 +5,37 @@ use super::model::{
 use serde::{Deserialize, Deserializer};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::process::Stdio;
 use std::time::Duration;
 use tokio::process::Command;
 
 const DEFAULT_COMMAND_TIMEOUT: Duration = Duration::from_secs(20);
 const CREATE_COMMAND_TIMEOUT: Duration = Duration::from_secs(300);
+
+#[cfg(test)]
+static TEST_DOCKER_PATH: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
+
+#[cfg(test)]
+pub(crate) struct DockerPathOverride;
+
+#[cfg(test)]
+impl Drop for DockerPathOverride {
+    fn drop(&mut self) {
+        *TEST_DOCKER_PATH
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn override_docker_path(path: PathBuf) -> DockerPathOverride {
+    let mut current = TEST_DOCKER_PATH
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    assert!(current.is_none());
+    *current = Some(path);
+    DockerPathOverride
+}
 
 #[derive(Debug, Deserialize)]
 struct ContainerListRow {
@@ -149,6 +175,15 @@ fn host_port_from(bindings: &HashMap<String, Option<Vec<PortBinding>>>, key: &st
 }
 
 fn docker_path() -> Result<PathBuf, String> {
+    #[cfg(test)]
+    if let Some(path) = TEST_DOCKER_PATH
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone()
+    {
+        return Ok(path);
+    }
+
     let mut candidates = Vec::new();
     if let Some(path) = std::env::var_os("PATH") {
         candidates.extend(std::env::split_paths(&path).map(|path| path.join("docker")));
@@ -171,6 +206,33 @@ fn docker_path() -> Result<PathBuf, String> {
         .into_iter()
         .find(|path| path.is_file())
         .ok_or_else(|| "Docker CLI was not found. Install Docker Desktop or OrbStack.".to_string())
+}
+
+pub(crate) fn logs_args(container_id: &str) -> Result<Vec<String>, String> {
+    if container_id.trim().is_empty() {
+        return Err("Docker container is missing. Relink this connection.".to_string());
+    }
+    Ok([
+        "logs",
+        "--tail",
+        "200",
+        "--follow",
+        "--timestamps",
+        container_id,
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .collect())
+}
+
+pub(crate) fn logs_command(container_id: &str) -> Result<Command, String> {
+    let mut command = Command::new(docker_path()?);
+    command
+        .args(logs_args(container_id)?)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    Ok(command)
 }
 
 pub(crate) async fn command(args: &[String], timeout: Duration) -> Result<String, String> {

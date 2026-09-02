@@ -8,6 +8,7 @@ import { DisconnectedScreen } from "@/components/connection-details/Disconnected
 import { RedisWorkspace } from "@/components/connection-details/RedisWorkspace";
 import { SqlConnectionWorkspace } from "@/components/connection-details/SqlConnectionWorkspace";
 import { MongoConnectionWorkspace } from "@/components/connection-details/MongoConnectionWorkspace";
+import { WorkspaceLogsNavigation } from "@/components/logs/WorkspaceLogsNavigation";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useConnectionLifecycle } from "@/hooks/connection-details/useConnectionLifecycle";
 import { useNativeCloseListener } from "@/hooks/connection-details/useNativeCloseListener";
@@ -25,9 +26,10 @@ export function ConnectionDetails() {
 		ready &&
 		lifecycle.connection.status === "disconnected" &&
 		!lifecycle.connection.hasEverConnected;
-	const rendersSqlWorkspace =
-		ready && !initiallyDisconnected && isSqlConnection(connection);
-	useNativeCloseListener({ kind: "window" }, !rendersSqlWorkspace);
+	useNativeCloseListener(
+		{ kind: "window" },
+		!ready || Boolean(initiallyDisconnected),
+	);
 
 	if (!ready) {
 		return (
@@ -83,9 +85,15 @@ export function ConnectionDetails() {
 				onStatusChange={lifecycle.commands.recordConnectionStatus}
 				onOpenSettings={openSettings}
 			/>
-			<div className="min-w-0 flex-1 overflow-auto p-3">
-				<RedisWorkspace connection={connection} />
-			</div>
+			<WorkspaceLogsNavigation
+				connection={connection}
+				workspaceLabel="Keys"
+				workspaceCloseTarget={{ kind: "window" }}
+			>
+				<div className="h-full min-w-0 overflow-auto p-3">
+					<RedisWorkspace connection={connection} />
+				</div>
+			</WorkspaceLogsNavigation>
 		</div>
 	);
 }
